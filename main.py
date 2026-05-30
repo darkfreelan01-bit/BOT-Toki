@@ -39,7 +39,7 @@ last_channel_use = {}
 channel_histories = {}  
 music_queues = {}       
 
-# --- 3. ตั้งค่า AI Model (ดึง Prompt จาก config.py โดยตรง!) ---
+# --- 3. ตั้งค่า AI Model (ดึง Prompt จาก config.py) ---
 model = genai.GenerativeModel(
     model_name=config.MODEL_NAME,
     system_instruction=config.TOKI_SYSTEM_INSTRUCTION
@@ -246,7 +246,7 @@ async def on_message(m):
         # แท็กระบบแยกแยะคนคุย (ดึงจาก Config Rule 6)
         user_tag = "[คุยกับนายท่าน/ผู้สร้าง]" if m.author.id == ADMIN_ID else "[คุยกับคนทั่วไป]"
         
-        # [อัปเดตใหม่] ดึงเวลาปัจจุบันมาใส่ใน Prompt เพื่อให้เจ๊รู้ว่ากี่โมง
+        # ดึงเวลาปัจจุบันมาใส่ใน Prompt เพื่อให้เจ๊รู้ว่ากี่โมง
         time_now = datetime.datetime.now().strftime("%H:%M")
         prompt_text = f"[{time_now}] {user_tag} {m.author.name}: {clean_content}"
 
@@ -300,18 +300,20 @@ async def on_message(m):
                     if attempt == 2: raise e 
                     await asyncio.sleep(2) 
 
-        # บันทึกประวัติ (จำแค่ 4 ข้อความล่าสุด)
+        # บันทึกประวัติ (ปรับเป็นจำ 6 ข้อความล่าสุด เพื่อรองรับ MomoTalk)
         channel_histories[m.channel.id].append({"role": "user", "parts": [prompt_text]})
         channel_histories[m.channel.id].append({"role": "model", "parts": [response_text]})
-        channel_histories[m.channel.id] = channel_histories[m.channel.id][-4:] 
+        channel_histories[m.channel.id] = channel_histories[m.channel.id][-6:] 
         last_bot_use[m.author.id] = time.time()
 
-        # ลบ Discord Custom Emoji ออกก่อนส่งให้ TTS อ่าน
+        # แยกลำดับการอ่านและการส่งอีโมจิ
         parts = [p.strip() for p in response_text.split('\n') if p.strip()]
         for p in parts:
+            # เพิ่มการลบ Discord Custom Emoji ชื่อสั้น (เช่น :AnosHeh:) ออกก่อนส่งให้ TTS อ่าน
             clean_text_for_tts = re.sub(r'<a?:\w+:\d+>', '', p)
+            clean_text_for_tts = re.sub(r':[\w~]+:', '', clean_text_for_tts)
             
-            # ส่งข้อความและแปลงอีโมจิ
+            # ส่งข้อความและแปลงอีโมจิให้เป็นรูป
             for match in re.finditer(r':(A?[\w~]+):', p):
                 raw_text = match.group(0)
                 e_name = match.group(1).replace('~', '_')
@@ -320,7 +322,7 @@ async def on_message(m):
             
             if p.strip(): await m.channel.send(p.strip())
             
-            # ระบบ TTS ป้องกันบั๊ก FFmpeg ค้าง
+            # ระบบ TTS ป้องกันบั๊ก FFmpeg ค้าง และไม่อ่านแท็กอีโมจิ
             if m.guild.voice_client and guild_tts_status.get(m.guild.id, True):
                 if not m.guild.voice_client.is_playing() and clean_text_for_tts.strip():
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
@@ -330,7 +332,6 @@ async def on_message(m):
                     await loop.run_in_executor(None, tts.save, temp_path)
                     
                     def after_playing_tts(error):
-                        # หน่วงเวลาให้ FFmpeg ปล่อยไฟล์ แล้วค่อยลบ (แก้บั๊ก return code 1)
                         time.sleep(0.5)
                         try:
                             if os.path.exists(temp_path): os.remove(temp_path)
@@ -340,7 +341,6 @@ async def on_message(m):
             await asyncio.sleep(0.5) 
             
     except Exception as e: 
-        # แก้ไขให้พ่น Log ละเอียดถ้ายิ้มพัง
         logging.exception("Critical Error in on_message:")
         if "429" in str(e) or "quota" in str(e).lower():
             await m.channel.send("โควต้าสมองเจ๊หมดเกลี้ยงแล้วนะฮะ คุณเธอ! 😭 พักให้เจ๊ชาร์จแบตแป๊บนึงเถอะค้าบ~")
