@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import datetime
 import asyncio
 import logging
 import tempfile
@@ -244,7 +245,10 @@ async def on_message(m):
 
         # แท็กระบบแยกแยะคนคุย (ดึงจาก Config Rule 6)
         user_tag = "[คุยกับนายท่าน/ผู้สร้าง]" if m.author.id == ADMIN_ID else "[คุยกับคนทั่วไป]"
-        prompt_text = f"{user_tag} {m.author.name}: {clean_content}"
+        
+        # [อัปเดตใหม่] ดึงเวลาปัจจุบันมาใส่ใน Prompt เพื่อให้เจ๊รู้ว่ากี่โมง
+        time_now = datetime.datetime.now().strftime("%H:%M")
+        prompt_text = f"[{time_now}] {user_tag} {m.author.name}: {clean_content}"
 
         current_parts = [prompt_text]
         loop = asyncio.get_running_loop()
@@ -276,7 +280,7 @@ async def on_message(m):
                             model.generate_content, 
                             full_contents, 
                             safety_settings=safety_settings,
-                            generation_config={"max_output_tokens": 300} 
+                            generation_config={"max_output_tokens": 1024} 
                         )
                     )
                     
