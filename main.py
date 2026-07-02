@@ -30,7 +30,7 @@ else:
 
 # --- 2. ตัวแปรสถานะระบบ ---
 ALLOWED_CHANNELS = {1153145753926115328: 1509816792300912820} 
-ADMIN_ID = 1102541072296575046 
+ADMIN_ID = 1112780936455667748 
 
 guild_tts_status = {}
 guild_ai_status = {}
@@ -236,8 +236,8 @@ async def on_message(m):
             channel_histories[m.channel.id] = []
         last_channel_use[m.channel.id] = current_time
 
-        # โควต้าแชทคนทั่วไป (ดีเลย์ 2 นาที)
-        if m.author.id in last_bot_use and (current_time - last_bot_use[m.author.id] < 120) and m.author.id != ADMIN_ID:
+        # โควต้าแชทคนทั่วไป (ดีเลย์ 30 วินาที)
+        if m.author.id in last_bot_use and (current_time - last_bot_use[m.author.id] < 30) and m.author.id != ADMIN_ID:
             return
 
         if m.channel.id not in channel_histories:
@@ -274,13 +274,18 @@ async def on_message(m):
         async with m.channel.typing():
             for attempt in range(3):
                 try:
+                    # ปรับเพิ่ม max_output_tokens เป็น 1500 เพื่อรับประกันว่าเจ๊จะพ่นแชท MomoTalk ได้จนจบโดยไม่ขาดตอน
                     response_obj = await loop.run_in_executor(
                         None, 
                         functools.partial(
                             model.generate_content, 
                             full_contents, 
                             safety_settings=safety_settings,
-                            generation_config={"max_output_tokens": 1024} 
+                            generation_config={
+                                "max_output_tokens": 1500,
+                                "temperature": 0.8,
+                                "top_p": 0.95
+                            } 
                         )
                     )
                     
@@ -300,16 +305,16 @@ async def on_message(m):
                     if attempt == 2: raise e 
                     await asyncio.sleep(2) 
 
-        # บันทึกประวัติ (ปรับเป็นจำ 6 ข้อความล่าสุด เพื่อรองรับ MomoTalk)
+        # บันทึกประวัติ (เพิ่มความจำให้เจ๊ Toki เป็น 20 ข้อความ)
         channel_histories[m.channel.id].append({"role": "user", "parts": [prompt_text]})
         channel_histories[m.channel.id].append({"role": "model", "parts": [response_text]})
-        channel_histories[m.channel.id] = channel_histories[m.channel.id][-6:] 
+        channel_histories[m.channel.id] = channel_histories[m.channel.id][-20:] 
         last_bot_use[m.author.id] = time.time()
 
         # แยกลำดับการอ่านและการส่งอีโมจิ
         parts = [p.strip() for p in response_text.split('\n') if p.strip()]
         for p in parts:
-            # เพิ่มการลบ Discord Custom Emoji ชื่อสั้น (เช่น :AnosHeh:) ออกก่อนส่งให้ TTS อ่าน
+            # ลบ Discord Custom Emoji ชื่อสั้น ออกก่อนส่งให้ TTS อ่าน เพื่อไม่ให้อ่านขยะ
             clean_text_for_tts = re.sub(r'<a?:\w+:\d+>', '', p)
             clean_text_for_tts = re.sub(r':[\w~]+:', '', clean_text_for_tts)
             
@@ -318,6 +323,7 @@ async def on_message(m):
                 raw_text = match.group(0)
                 e_name = match.group(1).replace('~', '_')
                 target_emoji = discord.utils.get(m.guild.emojis, name=e_name)
+                # จะทำการแปลงจาก Text (เช่น :AnosHeh:) ให้เป็น Emoji Object เพื่อให้ Discord แสดงผลถูกต้อง
                 p = p.replace(raw_text, str(target_emoji) if target_emoji else "")
             
             if p.strip(): await m.channel.send(p.strip())
